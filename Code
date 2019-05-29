@@ -92,4 +92,4 @@ for i in df['wiki_link']:
 # consolidate the whole dataframe
 df['official_website'] = website
 df = df.set_index('2018rank')
-df.to_csv('Shilun_Liang_Data_Engineering_Internship_Assignment.csv')
+df.to_csv('Shilun_Liang_Data_Engineering_Internship_Assignment.csv', encoding='utf_8_sig')
