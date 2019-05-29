@@ -1,0 +1,95 @@
+# import packages
+import pandas as pd
+import re
+import numpy as np
+import requests
+import lxml.html as lh
+from bs4 import BeautifulSoup
+import urllib.request as urllib2
+
+# read wikipedia website to select the top100 cities by population
+url = 'https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population'
+df = pd.read_html(url, header = 0)[4]
+df = df.loc[df['2018rank'] <= 100]
+
+# check the missing value status
+df.isna().sum()
+
+# convert the numric data into types that can be analyzed
+df.insert(1, '2016 land area (sq mi)', df['2016 land area'].str.extract('(\d+\.\d+|\d+)', expand = False).astype(float))
+df['2016 land area (km2)'] = df['2016 population density'].str.replace('km2', '')
+df.insert(1, '2016 population density (/sq mi)', df['Location'].str.extract('(\d+\,\d+|\d+)', expand = False))
+df['2016 population density (/sq mi)'] = df['2016 population density (/sq mi)'].str.replace(',', '')
+df['2016 population density (/km2)'] = df['Unnamed: 9'].str.replace('/km2', '')
+df['2016 population density (/km2)'] = df['2016 population density (/km2)'].str.replace(',', '')
+df.drop(['2016 land area', '2016 population density','Location', 'Unnamed: 9'], axis = 1, inplace = True)
+
+# reorder and rename columns
+cols = df.columns.tolist()
+cols = ['2018rank', 'City', 'State[c]', '2018estimate', '2010Census', 'Change', '2016 land area (sq mi)', '2016 land area (km2)', '2016 population density (/sq mi)',  '2016 population density (/km2)', 'Unnamed: 10']
+df = df[cols]
+df.rename(columns={'State[c]': 'State', 'Unnamed: 10': 'Location'}, inplace = True)
+
+# split the longitude and latitude inforamtion
+df['Both'], df['Location'] = df['Location'].str.split(' / ').str
+df['Longitude'], df['Latitude'] = df['Both'].str.split(' ').str
+df.drop(['Both'], axis = 1, inplace = True)
+
+# delete the reference signigal in city column
+df['City'] = df['City'].str.replace('(\[\w*\])', '')
+
+# extract wiki for each city
+url = 'https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population'
+user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
+headers = {'User-Agent':user_agent,}
+request = urllib2.Request(url,None,headers)
+page = urllib2.urlopen(request)
+soup = BeautifulSoup(page, 'html.parser')
+
+link = soup.find("table", {"class":"wikitable sortable"})
+
+links = link.find_all(href = True)
+
+for i in range(0,len(df)):
+    pat = df.loc[i,'City']
+    for j in links:
+        if j.text == pat:
+            try:
+                z = str(j).split(' ')[1]
+                wiki = re.findall('(/wiki.*)\"', z)
+                wiki = 'https://en.wikipedia.org' + wiki[0]
+                df.loc[i,'wiki_link'] = wiki
+            except:
+                df.loc[i,'wiki_link'] = np.nan
+                
+# extract official webpage for each city
+website = []
+
+for i in df['wiki_link']:
+    try:
+        url = i
+        user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
+        headers = {'User-Agent':user_agent,}
+        request = urllib2.Request(url,None,headers)
+        page = urllib2.urlopen(request)
+        soup = BeautifulSoup(page, 'html.parser')
+    
+        rows = soup.find("table", {"class":"infobox geography vcard"})
+
+        for row in rows:
+    
+        # get website information
+            webs = row.find_all('a', {"class": "external text"})
+            for web in webs:
+                if web != []:
+                    web = re.findall('(http.*)\"\s', str(web))
+        
+        website.append(web[-1])  
+    
+    except:
+        website.append('')
+
+# consolidate the whole dataframe
+df['official_website'] = website
+df = df.set_index('2018rank')
+df.to_csv('Shilun_Liang_Data_Engineering_Internship_Assignment.csv')
